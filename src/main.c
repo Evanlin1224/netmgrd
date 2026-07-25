@@ -1,10 +1,15 @@
 #include "daemon.h"
+#include "netlink_monitor.h"
 #define _XOPEN_SOURCE 700 // to fix the warning msg for `struct sigaction`
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <syslog.h>
 #include <signal.h>
+#include <errno.h>
+#include <sys/epoll.h>
+
+#define MAX_EVENTS 10
 
 static volatile sig_atomic_t keep_running = 1;
 
@@ -34,13 +39,61 @@ int main() {
         exit(EXIT_FAILURE);
     }
 
+    /* Initialize netlink socket */
+    int nl_fd = nl_monitor_init();
+    if (nl_fd < 0) {
+        syslog(LOG_ERR, "Failed to initialize netlink monitor.");
+        closelog();
+        exit(EXIT_FAILURE);
+    }
+
+    /* create epoll instance */
+    int epoll_fd = epoll_create1(0);
+    if (epoll_fd < 0) {
+        syslog(LOG_ERR, "Failed to create epoll instance.");
+        close(nl_fd);
+        closelog();
+        exit(EXIT_FAILURE);
+    }
+
+    /* add netlink socket to epoll*/
+    struct epoll_event ev;
+    ev.events = EPOLLIN;
+    ev.data.fd = nl_fd;
+    if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, nl_fd, &ev) < 0) {
+        syslog(LOG_ERR, "Failed to add netlink socket fd to epoll: %m");
+        close(epoll_fd);
+        close(nl_fd);
+        closelog();
+        exit(EXIT_FAILURE);
+    }
+
+    struct epoll_event events[MAX_EVENTS];
+    syslog(LOG_INFO, "Entering main event loop ...");
+
     while(keep_running) {
-        // Daemon main loop
-        syslog(LOG_INFO, "Daemon is running...");
-        sleep(5);
+        int nfds = epoll_wait(epoll_fd, events, MAX_EVENTS, -1);
+        if (nfds < 0) {
+            if (errno == EINTR) {
+                // Interrupted by a signal, continue waiting
+                continue;
+            }
+            syslog(LOG_ERR, "epoll_wait error: %m");
+            break;
+        }
+
+        for (int i = 0; i < nfds; i++) {
+            if (events[i].data.fd == nl_fd) {
+                nl_monitor_parse(nl_fd);
+            }
+        }
     }
 
     // graceful shutdown and release resources
+    syslog(LOG_INFO, "Cleaning up resources ...");
+    close(epoll_fd);
+    close(nl_fd);
+
     syslog(LOG_INFO, "Daemon stopped.");
     closelog();
 

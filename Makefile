@@ -6,7 +6,7 @@ CC = gcc
 TARGET = netmgrd
 
 # source files and object files
-SRCS = src/main.c src/daemon.c
+SRCS = src/main.c src/daemon.c src/netlink_monitor.c
 OBJECTS = $(SRCS:.c=.o)
 
 # default target
