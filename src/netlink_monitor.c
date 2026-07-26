@@ -5,15 +5,12 @@
 #include <sys/socket.h>
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
+#include <linux/if.h>
 #include <syslog.h>
 #include <string.h>
 #include <fcntl.h>
 #include <errno.h>
 #include <arpa/inet.h>
-#include <net/if.h>
-#ifndef IFF_LOWER_UP
-#define IFF_LOWER_UP 0x1000
-#endif
 
 
 int nl_monitor_init() {
