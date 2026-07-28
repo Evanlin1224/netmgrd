@@ -1,4 +1,6 @@
 #include "netlink_monitor.h"
+#include "state.h"
+#include "ipc.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -102,6 +104,26 @@ void nl_monitor_parse(int nl_fd) {
                 int carrier_up = (ifinfo->ifi_flags & IFF_LOWER_UP) != 0;
 
                 syslog(LOG_INFO, "Interface %s: admin %s, carrier %s", ifname, admin_up ? "up" : "down", carrier_up ? "up" : "down");
+
+                // update state table (link):
+                update_state_table_link(ifinfo->ifi_index, ifname, admin_up, carrier_up, nh->nlmsg_type == RTM_DELLINK);
+
+                // handle broadcast link event
+                struct ipc_if_event ev;
+                memset(&ev, 0, sizeof(ev));
+                ev.event_type = nh->nlmsg_type;
+                ev.if_index = ifinfo->ifi_index;
+                strncpy(ev.if_name, ifname, sizeof(ev.if_name) - 1);
+                ev.admin_up = admin_up;
+                ev.carrier_up = carrier_up;
+
+                // 嘗試從快取中撈取現有的 IP 補上，讓資料更完整
+                interface_state_t st;
+                if (get_state_by_index(ifinfo->ifi_index, &st) == 0) {
+                    strncpy(ev.ip_addr, st.ip_addr, sizeof(ev.ip_addr) - 1);
+                }
+                ipc_server_broadcast_event(&ev);
+                
             }
             // parse the Netlink IP address information (L3)
             else if (nh->nlmsg_type == RTM_NEWADDR || nh->nlmsg_type == RTM_DELADDR) {
@@ -126,6 +148,24 @@ void nl_monitor_parse(int nl_fd) {
 
                 syslog(LOG_INFO, "IP Event: Interface %s:  IP %s : %s", ifname, (nh->nlmsg_type == RTM_NEWADDR) ? "added" : "deleted", ip_str);
 
+                // update state table (ip address):
+                update_state_table_ip(ifaddr->ifa_index, ifname, ip_str, nh->nlmsg_type == RTM_DELADDR);
+
+                // handle broadcast ip event
+                struct ipc_if_event ev;
+                memset(&ev, 0, sizeof(ev));
+                ev.event_type = nh->nlmsg_type;
+                ev.if_index = ifaddr->ifa_index;
+                strncpy(ev.if_name, ifname, sizeof(ev.if_name) - 1);
+                strncpy(ev.ip_addr, ip_str, sizeof(ev.ip_addr) - 1);
+
+                // 嘗試從快取中撈取 Link 狀態補上
+                interface_state_t st;
+                if (get_state_by_index(ifaddr->ifa_index, &st) == 0) {
+                    ev.admin_up = st.admin_up;
+                    ev.carrier_up = st.carrier_up;
+                }
+                ipc_server_broadcast_event(&ev);
             }
         }
     }

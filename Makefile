@@ -3,18 +3,25 @@ CFLAGS = -Wall -Wextra -Iinclude -g
 CC = gcc
 
 # target name
-TARGET = netmgrd
+DAEMON_TARGET = netmgrd
+CLI_TARGET = ndc
 
 # source files and object files
-SRCS = src/main.c src/daemon.c src/netlink_monitor.c
-OBJECTS = $(SRCS:.c=.o)
+DAEMON_SRCS = src/main.c src/daemon.c src/netlink_monitor.c src/state.c src/ipc.c
+CLI_SRCS = cli/ndc.c cli/ipc_client.c
+
+DAEMON_OBJECTS = $(DAEMON_SRCS:.c=.o)
+CLI_OBJECTS = $(CLI_SRCS:.c=.o)
 
 # default target
-all: ${TARGET}
+all: ${DAEMON_TARGET} ${CLI_TARGET}
 
 # link object files to create the executable
-$(TARGET): $(OBJECTS)
-	$(CC) $(CFLAGS) -o $(TARGET) $(OBJECTS)
+$(DAEMON_TARGET): $(DAEMON_OBJECTS)
+	$(CC) $(CFLAGS) -o $(DAEMON_TARGET) $(DAEMON_OBJECTS)
+
+$(CLI_TARGET): $(CLI_OBJECTS)
+	$(CC) $(CFLAGS) -o $(CLI_TARGET) $(CLI_OBJECTS)
 
 # compile each source file to an object file
 %.o: %.c
@@ -22,7 +29,7 @@ $(TARGET): $(OBJECTS)
 
 # clean up object files and the executable
 clean:
-	rm -f $(OBJECTS) $(TARGET)
+	rm -f $(DAEMON_OBJECTS) $(CLI_OBJECTS) $(DAEMON_TARGET) $(CLI_TARGET)
 
 # delcare phony targets
 .PHONY: all clean

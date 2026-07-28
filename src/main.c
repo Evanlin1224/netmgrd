@@ -1,5 +1,7 @@
 #include "daemon.h"
 #include "netlink_monitor.h"
+#include "state.h"
+#include "ipc.h"
 #define _XOPEN_SOURCE 700 // to fix the warning msg for `struct sigaction`
 #include <stdio.h>
 #include <stdlib.h>
@@ -28,6 +30,9 @@ int main() {
     daemonize();
     syslog(LOG_INFO, "Daemonized successfully.");
 
+    init_state_table();
+    syslog(LOG_INFO, "State table initialized.");
+
     // Register signal handler for SIGTERM
     struct sigaction act;
     act.sa_handler = handle_signal;
@@ -47,11 +52,21 @@ int main() {
         exit(EXIT_FAILURE);
     }
 
+    // init ipc server
+    int ipc_listen_fd = ipc_server_init(NULL);
+    if (ipc_listen_fd < 0) {
+        syslog(LOG_ERR, "Failed to initialize IPC server.");
+        close(nl_fd);
+        closelog();
+        exit(EXIT_FAILURE);
+    }
+
     /* create epoll instance */
     int epoll_fd = epoll_create1(0);
     if (epoll_fd < 0) {
         syslog(LOG_ERR, "Failed to create epoll instance.");
         close(nl_fd);
+        close(ipc_listen_fd);
         closelog();
         exit(EXIT_FAILURE);
     }
@@ -64,6 +79,18 @@ int main() {
         syslog(LOG_ERR, "Failed to add netlink socket fd to epoll: %m");
         close(epoll_fd);
         close(nl_fd);
+        closelog();
+        exit(EXIT_FAILURE);
+    }
+
+    /* add UDS socket to poll */
+    ev.events = EPOLLIN;
+    ev.data.fd = ipc_listen_fd;
+    if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, ipc_listen_fd, &ev) < 0) {
+        syslog(LOG_ERR, "Failed to add UDS socket fd to epoll: %m");
+        close(epoll_fd);
+        close(nl_fd);
+        close(ipc_listen_fd);
         closelog();
         exit(EXIT_FAILURE);
     }
@@ -83,8 +110,13 @@ int main() {
         }
 
         for (int i = 0; i < nfds; i++) {
-            if (events[i].data.fd == nl_fd) {
+            int fd = events[i].data.fd;
+            if (fd == nl_fd) {
                 nl_monitor_parse(nl_fd);
+            } else if (fd == ipc_listen_fd) {
+                ipc_server_accept(ipc_listen_fd, epoll_fd);
+            } else {
+                ipc_server_handle_client(fd, epoll_fd);
             }
         }
     }
@@ -93,6 +125,8 @@ int main() {
     syslog(LOG_INFO, "Cleaning up resources ...");
     close(epoll_fd);
     close(nl_fd);
+    close(ipc_listen_fd);
+    ipc_server_cleanup();
 
     syslog(LOG_INFO, "Daemon stopped.");
     closelog();
