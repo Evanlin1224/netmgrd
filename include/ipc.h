@@ -25,11 +25,11 @@ struct ipc_header {
 // MSG_RESP_SHOW payload format:
 // uint32_t count (Big-Endian) + count * struct ipc_if_info
 struct ipc_if_info {
-    uint32_t if_index;
-    char if_name[IFNAMSIZ];
-    uint8_t admin_up;
-    uint8_t carrier_up;
-    char ip_addr[INET6_ADDRSTRLEN];
+    uint32_t if_index;   // 4 bytes
+    char if_name[IFNAMSIZ]; // 16 bytes
+    uint8_t admin_up;    // 1 byte
+    uint8_t carrier_up;  // 1 byte
+    char ip_addr[INET6_ADDRSTRLEN]; // 46 bytes
 } __attribute__((packed));
 
 // MSG_EVENT_MONITOR payload format: struct ipc_if_event

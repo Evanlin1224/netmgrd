@@ -1,8 +1,8 @@
+#define _XOPEN_SOURCE 700 // to fix the warning msg for `struct sigaction`
 #include "daemon.h"
 #include "netlink_monitor.h"
 #include "state.h"
 #include "ipc.h"
-#define _XOPEN_SOURCE 700 // to fix the warning msg for `struct sigaction`
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -31,7 +31,6 @@ int main() {
     syslog(LOG_INFO, "Daemonized successfully.");
 
     init_state_table();
-    syslog(LOG_INFO, "State table initialized.");
 
     // Register signal handler for SIGTERM
     struct sigaction act;

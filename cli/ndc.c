@@ -57,6 +57,7 @@ static void handle_show(int fd) {
         }
 
         printf("| %-5u | %-16s | %-8s | %-10s | %-43s |\n",
+                if_index,
                 info.if_name,
                 info.admin_up ? "UP" : "DOWN",
                 info.carrier_up ? "UP" : "DOWN",
