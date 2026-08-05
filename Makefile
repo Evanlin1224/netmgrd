@@ -7,7 +7,7 @@ DAEMON_TARGET = netmgrd
 CLI_TARGET = ndc
 
 # source files and object files
-DAEMON_SRCS = src/main.c src/daemon.c src/netlink_monitor.c src/state.c src/ipc.c
+DAEMON_SRCS = src/main.c src/daemon.c src/netlink_monitor.c src/netlink_control.c src/state.c src/ipc.c
 CLI_SRCS = cli/ndc.c cli/ipc_client.c
 
 DAEMON_OBJECTS = $(DAEMON_SRCS:.c=.o)
