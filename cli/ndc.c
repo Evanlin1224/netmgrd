@@ -7,7 +7,12 @@
 #include <linux/rtnetlink.h> // 取得 RTM_NEWLINK 等常數
 
 static void print_usage(void) {
-    printf("Usage: ndc <show|monitor>\n");
+    printf("Usage:\n");
+    printf("  ndc show\n");
+    printf("  ndc monitor\n");
+    printf("  ndc set link <ifname> <up | down>\n");
+    printf("  ndc set ip <ifname> <ip/prefix>\n");
+    printf("  ndc del ip <ifname> <ip/prefix>\n");
 }
 
 static void handle_show(int fd) {
@@ -102,6 +107,37 @@ static void handle_monitor(int fd) {
     }
 }
 
+static void handle_set_link(int fd, const char *if_name, uint8_t admin_up) {
+    if (ipc_client_set_link(fd, if_name, admin_up) != 0) return;
+    printf("Success to set link status\n");
+}
+
+static void handle_ip(int fd, const char *if_name, const char *ip_addr, uint8_t prefix_len, int is_del) {
+    if (is_del) {
+        if (ipc_client_del_ip(fd, if_name, ip_addr, prefix_len) != 0) return;
+    } else {
+        if (ipc_client_set_ip(fd, if_name, ip_addr, prefix_len) != 0) return;
+    }
+
+    printf("Success to %s IP\n", is_del ? "delete" : "set");
+}
+
+static int parse_ip_and_prefix_len(const char *source, char *ip, uint8_t *prefix_len) {
+    char tmp[64];
+    snprintf(tmp, INET6_ADDRSTRLEN, "%s", source);
+
+    char *slash = strchr(tmp, '/');
+    if (slash) {
+        *slash = '\0';
+        *prefix_len = (uint8_t)atoi(slash + 1);
+    } else {
+        *prefix_len = 32; // default value
+    }
+
+    snprintf(ip, INET6_ADDRSTRLEN, "%s", tmp);
+    return 0;
+}
+
 int main(int argc, char **argv) {
     if (argc < 2) {
         print_usage();
@@ -117,6 +153,59 @@ int main(int argc, char **argv) {
         handle_show(fd);
     } else if (strcmp(argv[1], "monitor") == 0) {
         handle_monitor(fd);
+    } else if (strcmp(argv[1], "set") == 0) {
+        // 檢查參數數量是否正確
+        if (argc != 5) {
+            printf("Please enter correct instruction:\n");
+            print_usage();
+            close(fd);
+            return EXIT_FAILURE;
+        }
+
+        if (strcmp(argv[2], "link") == 0) {
+            handle_set_link(fd, argv[3], strcmp(argv[4], "up") == 0 ? 1 : 0);
+            close(fd);
+            return EXIT_SUCCESS;
+        } else if (strcmp(argv[2], "ip") == 0) {
+            char ip[INET6_ADDRSTRLEN];
+            uint8_t prefix_len;
+            if (parse_ip_and_prefix_len(argv[4], ip, &prefix_len) < 0) {
+                printf("Invalid IP address: %s\n", argv[4]);
+                close(fd);
+                return EXIT_FAILURE;
+            }
+            handle_ip(fd, argv[3], ip, prefix_len, 0);
+            close(fd);
+            return EXIT_SUCCESS;
+        } else {
+            printf("Invalid instruction: %s\n", argv[2]);
+            close(fd);
+            return EXIT_FAILURE;
+        }
+    } else if(strcmp(argv[1], "del") == 0) {
+        if (argc != 5) {
+            printf("Please enter correct instruction:\n");
+            print_usage();
+            close(fd);
+            return EXIT_FAILURE;
+        }
+
+        if (strcmp(argv[2], "ip") == 0) {
+            char ip[INET6_ADDRSTRLEN];
+            uint8_t prefix_len;
+            if (parse_ip_and_prefix_len(argv[4], ip, &prefix_len) < 0) {
+                printf("Invalid IP address: %s\n", argv[4]);
+                close(fd);
+                return EXIT_FAILURE;
+            }
+            handle_ip(fd, argv[3], ip, prefix_len, 1);
+            close(fd);
+            return EXIT_SUCCESS;
+        } else {
+            printf("Invalid instruction: %s\n", argv[2]);
+            close(fd);
+            return EXIT_FAILURE;
+        }
     } else {
         print_usage();
         close(fd);
