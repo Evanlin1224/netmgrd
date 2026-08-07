@@ -1,5 +1,6 @@
 #include "ipc.h"
 #include "state.h"
+#include "netlink_control.h"
 
 #include <stdio.h>
 #include <syslog.h>
@@ -183,6 +184,77 @@ void ipc_server_handle_client(int client_fd, int epoll_fd) {
             epoll_ctl(epoll_fd, EPOLL_CTL_DEL, client_fd, NULL);
             close(client_fd);
         }
+    } else if (hdr.type == MSG_REQ_SET_LINK) {
+        syslog(LOG_INFO, "IPC: Received MSG_REQ_SET_LINK from client fd %d", client_fd);
+
+        // parse payload (struct ipc_if_set_link)
+        struct ipc_if_set_link payload;
+        memset(&payload, 0, sizeof(payload));
+        ssize_t payload_size = recv(client_fd, &payload, sizeof(payload), MSG_WAITALL);
+        if (payload_size < (ssize_t)sizeof(payload)) {
+            syslog(LOG_ERR, "IPC: Failed to recv SET_LINK payload from fd %d", client_fd);
+            epoll_ctl(epoll_fd, EPOLL_CTL_DEL, client_fd, NULL);
+            close(client_fd);
+            return;
+        }
+
+        // 執行 nl_set_link_status
+        int ret = nl_set_link_status(payload.if_name, payload.admin_up);
+
+        // 回傳 MSG_RESP_ACK
+        struct ipc_ack ack;
+        memset(&ack, 0, sizeof(ack));
+        ack.status_code = htonl(ret);
+        if (ret == 0) {
+            snprintf(ack.message, sizeof(ack.message), "Interface %s set to %s", payload.if_name, payload.admin_up ? "UP" : "DOWN");
+        } else {
+            snprintf(ack.message, sizeof(ack.message), "Failed to set %s: %s (%d)", payload.if_name, strerror(-ret), ret);
+        }
+         struct ipc_header resp_hdr;
+         resp_hdr.type = MSG_RESP_ACK;
+         resp_hdr.length = htonl(sizeof(struct ipc_ack));
+         send(client_fd, &resp_hdr, sizeof(resp_hdr), 0);
+         send(client_fd, &ack, sizeof(ack), 0);
+
+         // one-shot request, close connection after response
+         epoll_ctl(epoll_fd, EPOLL_CTL_DEL, client_fd, NULL);
+         close(client_fd);
+
+    } else if (hdr.type == MSG_REQ_SET_IP || hdr.type == MSG_REQ_DEL_IP) {
+        syslog(LOG_INFO, "IPC: Received %s from client fd %d", hdr.type == MSG_REQ_SET_IP ? "MSG_REQ_SET_IP" : "MSG_REQ_DEL_IP", client_fd);
+
+        // parse payload (struct ipc_if_set_ip)
+        struct ipc_if_set_ip payload;
+        memset(&payload, 0, sizeof(payload));
+        ssize_t payload_size = recv(client_fd, &payload, sizeof(payload), MSG_WAITALL);
+        if (payload_size < (ssize_t)sizeof(payload)) {
+            syslog(LOG_ERR, "IPC: Failed to recv SET_IP/DEL IP payload from fd %d", client_fd);
+            epoll_ctl(epoll_fd, EPOLL_CTL_DEL, client_fd, NULL);
+            close(client_fd);
+            return;
+        }
+
+        // 執行 nl_modify_ip_addr
+        int ret = nl_modify_ip_addr(payload.if_name, payload.ip_addr, payload.prefix_len, hdr.type == MSG_REQ_SET_IP ? NL_IP_ADDR_ADD : NL_IP_ADDR_DEL);
+
+        // 回傳 MSG_RESP_ACK
+        struct ipc_ack ack;
+        memset(&ack, 0, sizeof(ack));
+        ack.status_code = htonl(ret);
+        if (ret == 0) {
+            snprintf(ack.message, sizeof(ack.message), "Interface %s IP %s/%d %s", payload.if_name, payload.ip_addr, payload.prefix_len, hdr.type == MSG_REQ_SET_IP ? "added" : "deleted");
+        } else {
+            snprintf(ack.message, sizeof(ack.message), "Failed to %s IP %s/%d on interface %s: %s (%d)", hdr.type == MSG_REQ_SET_IP ? "add" : "delete", payload.ip_addr, payload.prefix_len, payload.if_name, strerror(-ret), ret);
+        }
+        struct ipc_header resp_hdr;
+        resp_hdr.type = MSG_RESP_ACK;
+        resp_hdr.length = htonl(sizeof(struct ipc_ack));
+        send(client_fd, &resp_hdr, sizeof(resp_hdr), 0);
+        send(client_fd, &ack, sizeof(ack), 0);
+
+        // one-shot request, close connection after response
+        epoll_ctl(epoll_fd, EPOLL_CTL_DEL, client_fd, NULL);
+        close(client_fd);
     } else {
         syslog(LOG_WARNING, "IPC: Received unknown type 0x%02X from fd %d", hdr.type, client_fd);
     }

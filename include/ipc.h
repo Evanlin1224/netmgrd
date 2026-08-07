@@ -15,6 +15,10 @@
 #define MSG_RESP_SHOW        0x02 // daemon -> ndc: 回傳狀態列表
 #define MSG_REQ_MONITOR     0x03 // ndc -> daemon: 請求狀態監控 (Payload 長度為 0)
 #define MSG_EVENT_MONITOR   0x04 // daemon -> ndc: 廣播網卡異動事件
+#define MSG_REQ_SET_LINK    0x05 // ndc -> daemon: 設定網卡狀態 (Payload: struct ipc_if_info)
+#define MSG_REQ_SET_IP      0x06 // ndc -> daemon: 設定網卡 IP
+#define MSG_REQ_DEL_IP      0x07 // ndc -> daemon: 刪除網卡 IP
+#define MSG_RESP_ACK        0x08 // daemon -> ndc: 回傳 ACK
 
 // TLV header
 struct ipc_header {
@@ -40,6 +44,25 @@ struct ipc_if_event {
     uint8_t admin_up;
     uint8_t carrier_up;
     char ip_addr[INET6_ADDRSTRLEN];
+} __attribute__((packed));
+
+// MSG_REQ_SET_LINK payload format:
+struct ipc_if_set_link {
+    char if_name[IFNAMSIZ];
+    uint8_t admin_up;
+} __attribute__((packed));
+
+// MSG_REQ_SET_IP payload format:
+struct ipc_if_set_ip {
+    char if_name[IFNAMSIZ];
+    char ip_addr[INET6_ADDRSTRLEN];
+    uint8_t prefix_len;
+} __attribute__((packed));
+
+// MSG_RESP_ACK payload format:
+struct ipc_ack {
+    int32_t status_code;
+    char message[128];
 } __attribute__((packed));
 
 
